@@ -14,9 +14,10 @@ export default function Home() {
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (e.type === "dragenter" || e.type === "dragover") {
+    console.log('Drag event:', e.type) // Debugging: Log drag events
+    if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true)
-    } else if (e.type === "dragleave") {
+    } else if (e.type === 'dragleave') {
       setDragActive(false)
     }
   }
@@ -25,6 +26,7 @@ export default function Home() {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
+    console.log('File dropped:', e.dataTransfer.files) // Debugging: Log dropped files
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       await handleUpload(e.dataTransfer.files[0])
     }
@@ -32,6 +34,7 @@ export default function Home() {
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault()
+    console.log('File selected:', e.target.files) // Debugging: Log selected files
     if (e.target.files && e.target.files[0]) {
       await handleUpload(e.target.files[0])
     }
@@ -40,13 +43,15 @@ export default function Home() {
   const handleUpload = async (file: File) => {
     setUploading(true)
     try {
+      console.log('Uploading file:', file.name) // Debugging: Log file upload start
       const newBlob = await upload(file.name, file, {
         access: 'public',
         handleUploadUrl: '/api/avatar/upload',
       })
+      console.log('Upload successful:', newBlob.url) // Debugging: Log successful upload
       setBlob(newBlob)
     } catch (err) {
-      console.error(err)
+      console.error('Upload error:', err) // Debugging: Log upload errors
     } finally {
       setUploading(false)
     }
@@ -57,7 +62,7 @@ export default function Home() {
       <h1 className="text-2xl font-bold mb-4">Upload Your Avatar</h1>
       <div 
         className={`relative border-2 border-dashed rounded-lg p-8 text-center ${
-          dragActive ? "border-primary" : "border-gray-300"
+          dragActive ? 'border-primary' : 'border-gray-300'
         }`}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
