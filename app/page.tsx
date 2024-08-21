@@ -1,100 +1,112 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
+import { useDropzone } from 'react-dropzone'
 import { upload } from '@vercel/blob/client'
-import { PutBlobResult } from '@vercel/blob'
-import { UploadIcon, ImageIcon } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import { useToast } from "@/components/ui/use-toast"
+import { UploadIcon, Loader2 } from 'lucide-react'
 
-export default function Component() {
-  const [dragActive, setDragActive] = useState(false)
-  const [blob, setBlob] = useState<PutBlobResult | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+export default function BlobUploader() {
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
+  const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
-    } else if (e.type === "dragleave") {
-      setDragActive(false)
+  const handleUpload = useCallback(async (files: File[]) => {
+    setIsUploading(true)
+    const newProgress: Record<string, number> = {}
+    files.forEach(file => newProgress[file.name] = 0)
+    setUploadProgress(newProgress)
+
+    for (const file of files) {
+      try {
+        const blob = await upload(file.name, file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload',
+          onProgress: (progress) => {
+            setUploadProgress(prev => ({...prev, [file.name]: progress}))
+          },
+        })
+        toast({
+          title: "File uploaded successfully",
+          description: `File "${file.name}" has been uploaded to ${blob.url}`,
+        })
+      } catch (error) {
+        toast({
+          title: "Upload failed",
+          description: `Failed to upload "${file.name}". Please try again.`,
+          variant: "destructive",
+        })
+        console.error('Upload error:', error)
+      }
     }
-  }
+    setIsUploading(false)
+    setUploadProgress({})
+  }, [toast])
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      await handleUpload(e.dataTransfer.files[0])
-    }
-  }
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    handleUpload(acceptedFiles)
+  }, [handleUpload])
 
-  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault()
-    if (e.target.files && e.target.files[0]) {
-      await handleUpload(e.target.files[0])
-    }
-  }
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.png', '.gif'],
+      'application/pdf': ['.pdf']
+    },
+    maxSize: 10 * 1024 * 1024 // 10MB
+  })
 
-  const handleUpload = async (file: File) => {
-    setUploading(true)
-    try {
-      const newBlob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/avatar/upload',
-      })
-      setBlob(newBlob)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setUploading(false)
-    }
+  const handleButtonClick = () => {
+    fileInputRef.current?.click()
   }
 
   return (
-    <div className="max-w-md mx-auto mt-8 p-6 bg-white rounded-lg shadow-md">
-      <h1 className="text-2xl font-bold mb-4">Upload Your Avatar</h1>
-      <div 
-        className={`relative border-2 border-dashed rounded-lg p-8 text-center ${
-          dragActive ? "border-primary" : "border-gray-300"
+    <div className="w-full max-w-md mx-auto">
+      <div
+        {...getRootProps()}
+        className={`p-8 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors ${
+          isDragActive ? 'border-primary bg-primary/10' : 'border-gray-300 hover:border-primary'
         }`}
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          onChange={handleChange}
-          accept="image/*"
-        />
+        <input {...getInputProps()} ref={fileInputRef} />
         <UploadIcon className="mx-auto h-12 w-12 text-gray-400" />
-        <p className="mt-2 text-sm text-gray-600">Drag and drop your image here, or click to select a file</p>
-        <p className="mt-1 text-xs text-gray-500">PNG, JPG, GIF up to 10MB</p>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="mt-4 px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50"
-          disabled={uploading}
-        >
-          {uploading ? 'Uploading...' : 'Select File'}
-        </button>
+        <p className="mt-2 text-sm text-gray-600">
+          {isDragActive
+            ? "Drop the files here..."
+            : "Drag 'n' drop some files here, or click to select files"}
+        </p>
+        <p className="mt-1 text-xs text-gray-500">
+          (Only *.jpeg, *.png, *.gif and *.pdf files under 10MB are accepted)
+        </p>
       </div>
-      {blob && (
-        <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-2">Uploaded Avatar</h2>
-          <div className="relative aspect-square w-32 mx-auto overflow-hidden rounded-full">
-            <img src={blob.url} alt="Uploaded avatar" className="object-cover w-full h-full" />
+      <div className="mt-4 text-center">
+        <Button onClick={handleButtonClick} disabled={isUploading}>
+          {isUploading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <UploadIcon className="mr-2 h-4 w-4" />
+              Select Files
+            </>
+          )}
+        </Button>
+      </div>
+      {Object.entries(uploadProgress).map(([fileName, progress]) => (
+        <div key={fileName} className="mt-2">
+          <p className="text-sm">{fileName}</p>
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div 
+              className="bg-primary h-2.5 rounded-full" 
+              style={{width: `${progress}%`}}
+            ></div>
           </div>
-          <p className="mt-2 text-sm text-center">
-            <a href={blob.url} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
-              View full size
-            </a>
-          </p>
         </div>
-      )}
+      ))}
     </div>
   )
 }
