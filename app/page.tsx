@@ -6,11 +6,12 @@ import { upload } from '@vercel/blob/client'
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { UploadIcon, Loader2 } from 'lucide-react'
+import { debounce } from 'lodash'
 
 export default function BlobUploader() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
-  const { toast } = useToast()
+  const { addToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleUpload = useCallback(async (files: File[]) => {
@@ -19,31 +20,48 @@ export default function BlobUploader() {
     files.forEach(file => newProgress[file.name] = 0)
     setUploadProgress(newProgress)
 
-    for (const file of files) {
+    const debouncedSetUploadProgress = debounce(setUploadProgress, 100)
+
+    const uploadFile = async (file: File) => {
       try {
-        const blob = await upload(file.name, file, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
-          onProgress: (progress) => {
-            setUploadProgress(prev => ({...prev, [file.name]: progress}))
-          },
-        })
-        toast({
-          title: "File uploaded successfully",
-          description: `File "${file.name}" has been uploaded to ${blob.url}`,
-        })
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', '/api/upload', true)
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const progress = (event.loaded / event.total) * 100
+            debouncedSetUploadProgress(prev => ({ ...prev, [file.name]: progress }))
+          }
+        }
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText)
+            addToast(`File "${file.name}" has been uploaded to ${response.url}`)
+          } else {
+            addToast(`Failed to upload "${file.name}". Please try again.`)
+          }
+        }
+
+        xhr.onerror = () => {
+          addToast(`Failed to upload "${file.name}". Please try again.`)
+        }
+
+        xhr.send(formData)
       } catch (error) {
-        toast({
-          title: "Upload failed",
-          description: `Failed to upload "${file.name}". Please try again.`,
-          variant: "destructive",
-        })
+        addToast(`Failed to upload "${file.name}". Please try again.`)
         console.error('Upload error:', error)
       }
     }
+
+    await Promise.all(files.map(uploadFile))
+
     setIsUploading(false)
     setUploadProgress({})
-  }, [toast])
+  }, [addToast])
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     handleUpload(acceptedFiles)
@@ -70,16 +88,12 @@ export default function BlobUploader() {
           isDragActive ? 'border-primary bg-primary/10' : 'border-gray-300 hover:border-primary'
         }`}
       >
-        <input {...getInputProps()} ref={fileInputRef} />
+        <input {...getInputProps()} ref={fileInputRef} aria-label="File upload input" />
         <UploadIcon className="mx-auto h-12 w-12 text-gray-400" />
         <p className="mt-2 text-sm text-gray-600">
-          {isDragActive
-            ? "Drop the files here..."
-            : "Drag 'n' drop some files here, or click to select files"}
+          {isDragActive ? 'Drop the files here...' : 'Drag \'n\' drop some files here, or click to select files'}
         </p>
-        <p className="mt-1 text-xs text-gray-500">
-          (Only *.jpeg, *.png, *.gif and *.pdf files under 10MB are accepted)
-        </p>
+        <p className="mt-1 text-xs text-gray-500">(Only *.jpeg, *.png, *.gif and *.pdf files under 10MB are accepted)</p>
       </div>
       <div className="mt-4 text-center">
         <Button onClick={handleButtonClick} disabled={isUploading}>
@@ -100,10 +114,7 @@ export default function BlobUploader() {
         <div key={fileName} className="mt-2">
           <p className="text-sm">{fileName}</p>
           <div className="w-full bg-gray-200 rounded-full h-2.5">
-            <div 
-              className="bg-primary h-2.5 rounded-full" 
-              style={{width: `${progress}%`}}
-            ></div>
+            <div className="bg-primary h-2.5 rounded-full" style={{ width: `${progress}%` }}></div>
           </div>
         </div>
       ))}
