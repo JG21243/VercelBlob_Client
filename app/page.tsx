@@ -1,28 +1,20 @@
+"use client"; // Add this directive at the top
+
 import { useToast } from "@/components/ui/use-toast";
+import { useCallback, useState } from 'react';
 
-const { toast } = useToast(); // Change this line
+const MyComponent = () => {
+  const { addToast } = useToast();
+  const [isUploading, setIsUploading] = useState(false);
 
-const handleUpload = useCallback(async (files: File[]) => {
-  setIsUploading(true);
-  const newProgress: Record<string, number> = {};
-  files.forEach((file) => (newProgress[file.name] = 0));
-  setUploadProgress(newProgress);
+  const handleUpload = useCallback(async (files: File[]) => {
+    setIsUploading(true);
 
-  const debouncedSetUploadProgress = debounce(setUploadProgress, 100);
-
-  const uploadFile = async (file: File) => {
     try {
       // Step 1: Get the upload URL
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-          size: file.size,
-        }),
+      const response = await fetch('/api/get-upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ fileName: files[0].name }),
       });
 
       if (!response.ok) {
@@ -34,9 +26,9 @@ const handleUpload = useCallback(async (files: File[]) => {
       // Step 2: Upload the file
       const uploadResponse = await fetch(uploadUrl, {
         method: "PUT",
-        body: file,
+        body: files[0],
         headers: {
-          "Content-Type": file.type,
+          "Content-Type": files[0].type,
         },
       });
 
@@ -44,25 +36,25 @@ const handleUpload = useCallback(async (files: File[]) => {
         throw new Error(`Upload failed with status: ${uploadResponse.status}`);
       }
 
-      toast({ // Change this line
+      addToast({
         title: "File uploaded successfully",
-        description: `File "${file.name}" has been uploaded.`,
       });
-
-      // Update progress to 100%
-      debouncedSetUploadProgress((prev) => ({ ...prev, [file.name]: 100 }));
     } catch (error) {
-      toast({ // Change this line
+      addToast({
         title: "Upload failed",
-        description: `Failed to upload "${file.name}". Please try again.`,
-        variant: "destructive",
+        description: error.message,
       });
-      console.error("Upload error:", error);
+    } finally {
+      setIsUploading(false);
     }
-  };
+  }, []);
 
-  await Promise.all(files.map(uploadFile));
+  return (
+    <div>
+      <input type="file" onChange={(e) => handleUpload(e.target.files)} />
+      {isUploading && <p>Uploading...</p>}
+    </div>
+  );
+};
 
-  setIsUploading(false);
-  setUploadProgress({});
-}, [toast]); // Change this line
+export default MyComponent;
